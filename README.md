@@ -30,6 +30,8 @@ Este repositório mantém duas versões do projeto em branches separadas:
 - **Alertas Automáticos:** avisos em tempo real de estoque abaixo do mínimo e lotes próximos ao vencimento (14 dias).
 - **Reset de Demonstração:** botão na barra superior e na tela de login para restaurar os dados iniciais no navegador.
 
+- Para ver a pagina -> https://edilsonemidio.github.io/Loa-hackathon/secretaria/
+
 ### Desenvolvimento Local
 
 ```bash
