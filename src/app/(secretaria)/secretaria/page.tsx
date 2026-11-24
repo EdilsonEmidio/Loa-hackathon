@@ -1,80 +1,70 @@
-import { requireRole } from "@/lib/auth";
-import { db } from "@/db/client";
-import {
-  pedidos,
-  pedidoItens,
-  produtos,
-  escolas,
-  fornecedores,
-  pedidoHistoricoStatus,
-  perfisUsuarios,
-} from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
-import { PainelSecretariaClient } from "./painel-secretaria-client";
+"use client";
+
+import { useMemo } from "react";
 import { Building2 } from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import { PainelSecretariaClient } from "./painel-secretaria-client";
 
-export default async function SecretariaDashboardPage() {
-  await requireRole(["secretaria", "administrador"]);
+export default function SecretariaDashboardPage() {
+  const { db } = useAppStore();
 
-  // 1. Escolas para os filtros
-  const listaEscolas = await db
-    .select({ id: escolas.id, nome: escolas.nome })
-    .from(escolas)
-    .orderBy(escolas.nome);
+  const listaEscolas = useMemo(
+    () =>
+      [...db.escolas]
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+        .map((e) => ({ id: e.id, nome: e.nome })),
+    [db.escolas]
+  );
 
-  // 2. Fornecedores disponíveis
-  const listaFornecedores = await db
-    .select({ id: fornecedores.id, nome: fornecedores.nome })
-    .from(fornecedores)
-    .orderBy(fornecedores.nome);
+  const listaFornecedores = useMemo(
+    () =>
+      [...db.fornecedores]
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+        .map((f) => ({ id: f.id, nome: f.nome })),
+    [db.fornecedores]
+  );
 
-  // 3. Buscar todos os pedidos
-  const pedidosRaw = await db
-    .select({
-      id: pedidos.id,
-      idEscola: pedidos.idEscola,
-      nomeEscola: escolas.nome,
-      nomeSolicitante: perfisUsuarios.nome,
-      status: pedidos.status,
-      dataSolicitacao: pedidos.dataSolicitacao,
-      dataPrevistaEntrega: pedidos.dataPrevistaEntrega,
-      dataEntrega: pedidos.dataEntrega,
-      observacao: pedidos.observacao,
-      motivoCancelamento: pedidos.motivoCancelamento,
-    })
-    .from(pedidos)
-    .innerJoin(escolas, eq(pedidos.idEscola, escolas.id))
-    .innerJoin(perfisUsuarios, eq(pedidos.idUsuarioSolicitante, perfisUsuarios.idAuth))
-    .orderBy(desc(pedidos.dataSolicitacao));
+  const pedidosCompletos = useMemo(() => {
+    const pedidosOrdenados = [...db.pedidos].sort(
+      (a, b) =>
+        new Date(b.dataSolicitacao).getTime() -
+        new Date(a.dataSolicitacao).getTime()
+    );
 
-  // 4. Buscar itens e histórico de cada pedido
-  const pedidosCompletos = await Promise.all(
-    pedidosRaw.map(async (ped) => {
-      const itens = await db
-        .select({
-          idProduto: pedidoItens.idProduto,
-          nomeProduto: produtos.nome,
-          categoria: produtos.categoria,
-          unidade: produtos.unidade,
-          quantidade: pedidoItens.quantidade,
-          precoUnitario: pedidoItens.precoUnitario,
-          idFornecedor: pedidoItens.idFornecedor,
-          nomeFornecedor: fornecedores.nome,
-        })
-        .from(pedidoItens)
-        .innerJoin(produtos, eq(pedidoItens.idProduto, produtos.id))
-        .leftJoin(fornecedores, eq(pedidoItens.idFornecedor, fornecedores.id))
-        .where(eq(pedidoItens.idPedido, ped.id));
+    return pedidosOrdenados.map((ped) => {
+      const escola = db.escolas.find((e) => e.id === ped.idEscola);
+      const solicitante = db.perfisUsuarios.find(
+        (u) => u.idAuth === ped.idUsuarioSolicitante
+      );
 
-      const historico = await db
-        .select({
-          status: pedidoHistoricoStatus.status,
-          observacao: pedidoHistoricoStatus.observacao,
-          data: pedidoHistoricoStatus.data,
-        })
-        .from(pedidoHistoricoStatus)
-        .where(eq(pedidoHistoricoStatus.idPedido, ped.id))
-        .orderBy(desc(pedidoHistoricoStatus.data));
+      const itens = db.pedidoItens
+        .filter((it) => it.idPedido === ped.id)
+        .map((it) => {
+          const prod = db.produtos.find((p) => p.id === it.idProduto);
+          const forn = it.idFornecedor
+            ? db.fornecedores.find((f) => f.id === it.idFornecedor)
+            : undefined;
+
+          return {
+            idProduto: it.idProduto,
+            nomeProduto: prod?.nome || `Produto #${it.idProduto}`,
+            categoria: prod?.categoria || "outros",
+            unidade: prod?.unidade || "un",
+            quantidade: it.quantidade,
+            precoUnitario: it.precoUnitario,
+            idFornecedor: it.idFornecedor,
+            nomeFornecedor: forn?.nome ?? null,
+          };
+        });
+
+      const historico = db.pedidoHistoricoStatus
+        .filter((h) => h.idPedido === ped.id)
+        .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+        .map((h) => ({
+          status: h.status,
+          observacao: h.observacao,
+          data: h.data,
+        }));
 
       const valorTotal = itens.reduce(
         (acc, item) => acc + Number(item.precoUnitario) * item.quantidade,
@@ -82,13 +72,22 @@ export default async function SecretariaDashboardPage() {
       );
 
       return {
-        ...ped,
+        id: ped.id,
+        idEscola: ped.idEscola,
+        nomeEscola: escola?.nome || `Escola #${ped.idEscola}`,
+        nomeSolicitante: solicitante?.nome || "Usuário",
+        status: ped.status,
+        dataSolicitacao: ped.dataSolicitacao,
+        dataPrevistaEntrega: ped.dataPrevistaEntrega,
+        dataEntrega: ped.dataEntrega,
+        observacao: ped.observacao,
+        motivoCancelamento: ped.motivoCancelamento,
         itens,
         historico,
         valorTotal,
       };
-    })
-  );
+    });
+  }, [db]);
 
   return (
     <div className="space-y-6">
@@ -99,7 +98,8 @@ export default async function SecretariaDashboardPage() {
             <span>Painel da Secretaria de Educação</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Gestão centralizada de pedidos, análise, tramitação e relatórios para a rede escolar
+            Gestão centralizada de pedidos, análise, tramitação e relatórios
+            para a rede escolar
           </p>
         </div>
       </div>

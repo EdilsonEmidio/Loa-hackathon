@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { darBaixaEstoqueAction } from "@/actions/estoque-actions";
+import { useAppStore } from "@/context/app-store";
+import { isValidadeProxima } from "@/lib/alertas";
 import {
   Boxes,
   AlertTriangle,
@@ -40,40 +41,47 @@ export function EstoqueEscolaClient({
   lotes: LoteItem[];
   produtosCatalogo: ProdutoCatalogo[];
 }) {
+  const { darBaixaEstoque } = useAppStore();
+
   const [busca, setBusca] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
   const [loteParaBaixa, setLoteParaBaixa] = useState<LoteItem | null>(null);
   const [quantidadeBaixa, setQuantidadeBaixa] = useState<number>(1);
-  const [motivoBaixa, setMotivoBaixa] = useState("Consumo regular na merenda/limpeza escolar");
+  const [motivoBaixa, setMotivoBaixa] = useState(
+    "Consumo regular na merenda/limpeza escolar"
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Calcular saldo total por produto
   const saldoPorProduto: Record<number, number> = {};
   for (const l of lotes) {
-    saldoPorProduto[l.idProduto] = (saldoPorProduto[l.idProduto] || 0) + l.quantidadeAtual;
+    saldoPorProduto[l.idProduto] =
+      (saldoPorProduto[l.idProduto] || 0) + l.quantidadeAtual;
   }
 
-  const categorias = ["todas", ...Array.from(new Set(produtosCatalogo.map((p) => p.categoria)))];
-
-  const isValidadeProxima = (validadeStr: string | null) => {
-    if (!validadeStr) return false;
-    const dataVal = new Date(validadeStr + "T00:00:00");
-    const hoje = new Date();
-    const diffDias = Math.ceil((dataVal.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDias <= 14;
-  };
+  const categorias = [
+    "todas",
+    ...Array.from(new Set(produtosCatalogo.map((p) => p.categoria))),
+  ];
 
   const lotesFiltrados = lotes.filter((l) => {
-    const matchCat = filtroCategoria === "todas" || l.categoria === filtroCategoria;
-    const matchBusca = l.nomeProduto.toLowerCase().includes(busca.toLowerCase());
+    const matchCat =
+      filtroCategoria === "todas" || l.categoria === filtroCategoria;
+    const matchBusca = l.nomeProduto
+      .toLowerCase()
+      .includes(busca.toLowerCase());
     return matchCat && matchBusca;
   });
 
   const handleConfirmarBaixa = async () => {
     if (!loteParaBaixa) return;
-    if (quantidadeBaixa <= 0 || quantidadeBaixa > loteParaBaixa.quantidadeAtual) {
-      setErro(`A quantidade deve ser entre 1 e ${loteParaBaixa.quantidadeAtual}`);
+    if (
+      quantidadeBaixa <= 0 ||
+      quantidadeBaixa > loteParaBaixa.quantidadeAtual
+    ) {
+      setErro(
+        `A quantidade deve ser entre 1 e ${loteParaBaixa.quantidadeAtual}`
+      );
       return;
     }
 
@@ -81,7 +89,7 @@ export function EstoqueEscolaClient({
     setErro(null);
 
     try {
-      const res = await darBaixaEstoqueAction({
+      const res = darBaixaEstoque({
         idEstoqueLote: loteParaBaixa.idLote,
         quantidade: quantidadeBaixa,
         tipo: "baixa_consumo",
@@ -94,8 +102,8 @@ export function EstoqueEscolaClient({
         setLoteParaBaixa(null);
         setQuantidadeBaixa(1);
       }
-    } catch (err: any) {
-      setErro(err.message || "Erro inesperado.");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
       setIsSubmitting(false);
     }
@@ -142,7 +150,8 @@ export function EstoqueEscolaClient({
             Nenhum lote registrado no estoque
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Novos lotes entram no estoque automaticamente quando a Secretaria confirma a entrega de um pedido.
+            Novos lotes entram no estoque automaticamente quando a Secretaria
+            confirma a entrega de um pedido.
           </p>
         </div>
       ) : (
@@ -166,12 +175,17 @@ export function EstoqueEscolaClient({
                   const vencendoLogo = isValidadeProxima(lote.validade);
 
                   return (
-                    <tr key={lote.idLote} className="hover:bg-slate-50/70 transition">
+                    <tr
+                      key={lote.idLote}
+                      className="hover:bg-slate-50/70 transition"
+                    >
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
                         <div className="flex items-center gap-2.5">
                           <Package className="w-4 h-4 text-slate-400 shrink-0" />
                           <div>
-                            <span className="font-bold text-slate-900">{lote.nomeProduto}</span>
+                            <span className="font-bold text-slate-900">
+                              {lote.nomeProduto}
+                            </span>
                             <span className="block text-[10px] font-mono text-slate-500 font-normal">
                               Lote #{lote.idLote.toString().padStart(4, "0")}
                             </span>
@@ -188,7 +202,9 @@ export function EstoqueEscolaClient({
                           <div className="flex items-center gap-1.5 font-mono text-slate-700">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
                             <span>
-                              {new Date(lote.validade + "T00:00:00").toLocaleDateString("pt-BR")}
+                              {new Date(
+                                lote.validade + "T00:00:00"
+                              ).toLocaleDateString("pt-BR")}
                             </span>
                           </div>
                         ) : (
@@ -255,8 +271,12 @@ export function EstoqueEscolaClient({
                   <MinusCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Registrar Baixa de Consumo</h3>
-                  <p className="text-xs text-slate-500">{loteParaBaixa.nomeProduto}</p>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Registrar Baixa de Consumo
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {loteParaBaixa.nomeProduto}
+                  </p>
                 </div>
               </div>
               <button
@@ -276,7 +296,9 @@ export function EstoqueEscolaClient({
 
             <div className="mt-4 space-y-4">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs flex justify-between items-center">
-                <span className="text-slate-600 font-medium">Saldo disponível no lote:</span>
+                <span className="text-slate-600 font-medium">
+                  Saldo disponível no lote:
+                </span>
                 <span className="font-mono font-bold text-slate-900 text-sm">
                   {loteParaBaixa.quantidadeAtual} {loteParaBaixa.unidade}
                 </span>
@@ -284,7 +306,8 @@ export function EstoqueEscolaClient({
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Quantidade a ser consumida <span className="text-red-500">*</span>
+                  Quantidade a ser consumida{" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"

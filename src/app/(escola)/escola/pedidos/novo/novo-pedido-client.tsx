@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { criarPedidoAction } from "@/actions/pedido-actions";
 import Link from "next/link";
+import { useAppStore } from "@/context/app-store";
 import {
   ArrowLeft,
   ShoppingCart,
@@ -31,6 +31,8 @@ export function FormNovoPedidoClient({
   nomeEscola: string;
 }) {
   const router = useRouter();
+  const { criarPedido } = useAppStore();
+
   const [quantidades, setQuantidades] = useState<Record<number, number>>({});
   const [observacao, setObservacao] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>("todas");
@@ -38,15 +40,19 @@ export function FormNovoPedidoClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const categorias = ["todas", ...Array.from(new Set(produtos.map((p) => p.categoria)))];
+  const categorias = [
+    "todas",
+    ...Array.from(new Set(produtos.map((p) => p.categoria))),
+  ];
 
   const handleUpdateQuantidade = (id: number, delta: number) => {
     setQuantidades((prev) => {
       const atual = prev[id] || 0;
       const novo = Math.max(0, atual + delta);
       if (novo === 0) {
-        const { [id]: _, ...rest } = prev;
-        return rest;
+        const next = { ...prev };
+        delete next[id];
+        return next;
       }
       return { ...prev, [id]: novo };
     });
@@ -56,15 +62,18 @@ export function FormNovoPedidoClient({
     const num = parseInt(valor, 10);
     setQuantidades((prev) => {
       if (isNaN(num) || num <= 0) {
-        const { [id]: _, ...rest } = prev;
-        return rest;
+        const next = { ...prev };
+        delete next[id];
+        return next;
       }
       return { ...prev, [id]: num };
     });
   };
 
-  const itensSelecionados = Object.entries(quantidades).filter(([_, q]) => q > 0);
-  const totalItens = itensSelecionados.reduce((acc, [_, q]) => acc + q, 0);
+  const itensSelecionados = Object.entries(quantidades).filter(
+    ([, q]) => q > 0
+  );
+  const totalItens = itensSelecionados.reduce((acc, [, q]) => acc + q, 0);
 
   const valorTotalGeral = itensSelecionados.reduce((acc, [idStr, q]) => {
     const prod = produtos.find((p) => p.id === Number(idStr));
@@ -72,7 +81,8 @@ export function FormNovoPedidoClient({
   }, 0);
 
   const produtosFiltrados = produtos.filter((p) => {
-    const matchCat = categoriaAtiva === "todas" || p.categoria === categoriaAtiva;
+    const matchCat =
+      categoriaAtiva === "todas" || p.categoria === categoriaAtiva;
     const matchBusca =
       p.nome.toLowerCase().includes(busca.toLowerCase()) ||
       (p.descricao && p.descricao.toLowerCase().includes(busca.toLowerCase()));
@@ -95,15 +105,15 @@ export function FormNovoPedidoClient({
     }));
 
     try {
-      const res = await criarPedidoAction(payload, observacao);
+      const res = criarPedido(payload, observacao);
       if (!res.success) {
         setErro(res.error || "Erro ao criar pedido.");
         setIsSubmitting(false);
       } else {
         router.push("/escola");
       }
-    } catch (err: any) {
-      setErro(err.message || "Erro inesperado.");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro inesperado.");
       setIsSubmitting(false);
     }
   };
@@ -120,16 +130,21 @@ export function FormNovoPedidoClient({
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Criar Novo Pedido</h1>
+            <h1 className="text-xl font-bold text-slate-900">
+              Criar Novo Pedido
+            </h1>
             <p className="text-xs text-slate-500">
-              Solicitando para: <span className="text-slate-800 font-bold">{nomeEscola}</span>
+              Solicitando para:{" "}
+              <span className="text-slate-800 font-bold">{nomeEscola}</span>
             </p>
           </div>
         </div>
 
         {/* Resumo Rápido */}
         <div className="text-right">
-          <span className="text-xs text-slate-500 font-medium block">Total Previsto</span>
+          <span className="text-xs text-slate-500 font-medium block">
+            Total Previsto
+          </span>
           <span className="text-xl font-extrabold text-emerald-600 font-mono">
             R$ {valorTotalGeral.toFixed(2)}
           </span>
@@ -208,7 +223,9 @@ export function FormNovoPedidoClient({
 
               {/* Controle de Quantidade */}
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-500 font-medium">Quantidade:</span>
+                <span className="text-xs text-slate-500 font-medium">
+                  Quantidade:
+                </span>
 
                 <div className="flex items-center gap-1.5">
                   <button
@@ -224,7 +241,9 @@ export function FormNovoPedidoClient({
                     type="number"
                     min="0"
                     value={qtd === 0 ? "" : qtd}
-                    onChange={(e) => handleSetQuantidadeDireta(prod.id, e.target.value)}
+                    onChange={(e) =>
+                      handleSetQuantidadeDireta(prod.id, e.target.value)
+                    }
                     placeholder="0"
                     className="w-14 h-8 rounded-lg bg-white border border-slate-300 text-center font-mono text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600"
                   />

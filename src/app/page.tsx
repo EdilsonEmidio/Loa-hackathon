@@ -1,18 +1,35 @@
-import { getSession } from "@/lib/session";
-import { redirect } from "next/navigation";
+"use client";
 
-export default async function HomePage() {
-  const session = await getSession();
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAppStore } from "@/context/app-store";
 
-  if (!session) {
-    redirect("/login");
-  }
+export default function HomePage() {
+  const { session, isHydrated } = useAppStore();
+  const router = useRouter();
 
-  if (session.papel === "administrador") {
-    redirect("/admin");
-  } else if (session.papel === "secretaria") {
-    redirect("/secretaria");
-  } else {
-    redirect("/escola");
-  }
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    if (!session) {
+      router.replace("/login");
+    } else if (session.papel === "administrador") {
+      router.replace("/admin");
+    } else if (session.papel === "secretaria") {
+      router.replace("/secretaria");
+    } else {
+      router.replace("/escola");
+    }
+  }, [isHydrated, session, router]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-xs font-semibold text-slate-500">
+          Redirecionando...
+        </p>
+      </div>
+    </div>
+  );
 }

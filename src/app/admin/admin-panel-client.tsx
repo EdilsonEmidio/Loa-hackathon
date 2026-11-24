@@ -1,31 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import {
-  criarEscolaAction,
-  criarUsuarioAction,
-  criarProdutoAction,
-  criarFornecedorAction,
-} from "@/actions/admin-actions";
-import {
-  Users,
-  School,
-  Package,
-  Truck,
-  Plus,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  Building,
-  Phone,
-  FileText,
-} from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import type {
+  CategoriaProduto,
+  Escola,
+  Fornecedor,
+  PapelUsuario,
+  Produto,
+} from "@/lib/types";
+import { Users, School, Package, Truck, Plus, X } from "lucide-react";
+
+interface UsuarioAdminItem {
+  idAuth: string;
+  nome: string;
+  email: string;
+  papel: PapelUsuario;
+  idEscola: number | null;
+  nomeEscola: string | null;
+}
 
 interface AdminPanelProps {
-  escolas: any[];
-  usuarios: any[];
-  produtos: any[];
-  fornecedores: any[];
+  escolas: Escola[];
+  usuarios: UsuarioAdminItem[];
+  produtos: Produto[];
+  fornecedores: Fornecedor[];
 }
 
 export function AdminPanelClient({
@@ -34,9 +33,12 @@ export function AdminPanelClient({
   produtos,
   fornecedores,
 }: AdminPanelProps) {
-  const [abaAtiva, setAbaAtiva] = useState<"usuarios" | "escolas" | "produtos" | "fornecedores">(
-    "usuarios"
-  );
+  const { criarEscola, criarUsuario, criarProduto, criarFornecedor } =
+    useAppStore();
+
+  const [abaAtiva, setAbaAtiva] = useState<
+    "usuarios" | "escolas" | "produtos" | "fornecedores"
+  >("usuarios");
 
   // Modais de Criação
   const [modalUsuario, setModalUsuario] = useState(false);
@@ -48,8 +50,10 @@ export function AdminPanelClient({
   const [uNome, setUNome] = useState("");
   const [uEmail, setUEmail] = useState("");
   const [uSenha, setUSenha] = useState("123456");
-  const [uPapel, setUPapel] = useState<"escola" | "secretaria" | "administrador">("escola");
-  const [uIdEscola, setUIdEscola] = useState<string>(escolas[0]?.id?.toString() || "");
+  const [uPapel, setUPapel] = useState<PapelUsuario>("escola");
+  const [uIdEscola, setUIdEscola] = useState<string>(
+    escolas[0]?.id?.toString() || ""
+  );
 
   // Formulário Escola
   const [eNome, setENome] = useState("");
@@ -58,9 +62,7 @@ export function AdminPanelClient({
 
   // Formulário Produto
   const [pNome, setPNome] = useState("");
-  const [pCategoria, setPCategoria] = useState<
-    "limpeza" | "higiene" | "alimento" | "material" | "outros"
-  >("alimento");
+  const [pCategoria, setPCategoria] = useState<CategoriaProduto>("alimento");
   const [pUnidade, setPUnidade] = useState("un");
   const [pPreco, setPPreco] = useState("10.00");
   const [pEstoqueMin, setPEstoqueMin] = useState(10);
@@ -81,12 +83,13 @@ export function AdminPanelClient({
     setLoading(true);
     setErro(null);
     try {
-      const res = await criarUsuarioAction(
+      const escolaId = uIdEscola || escolas[0]?.id?.toString() || "";
+      const res = criarUsuario(
         uNome,
         uEmail,
         uSenha,
         uPapel,
-        uPapel === "escola" ? Number(uIdEscola) : null
+        uPapel === "escola" ? Number(escolaId) : null
       );
       if (!res.success) {
         setErro(res.error || "Erro ao criar usuário.");
@@ -106,7 +109,7 @@ export function AdminPanelClient({
     setLoading(true);
     setErro(null);
     try {
-      const res = await criarEscolaAction(eNome, eEndereco, eTelefone);
+      const res = criarEscola(eNome, eEndereco, eTelefone);
       if (!res.success) {
         setErro(res.error || "Erro ao criar escola.");
       } else {
@@ -126,7 +129,7 @@ export function AdminPanelClient({
     setLoading(true);
     setErro(null);
     try {
-      const res = await criarProdutoAction(
+      const res = criarProduto(
         pNome,
         pCategoria,
         pUnidade,
@@ -152,7 +155,7 @@ export function AdminPanelClient({
     setLoading(true);
     setErro(null);
     try {
-      const res = await criarFornecedorAction(fNome, fCnpj, fContato, fTelefone);
+      const res = criarFornecedor(fNome, fCnpj, fContato, fTelefone);
       if (!res.success) {
         setErro(res.error || "Erro ao criar fornecedor.");
       } else {
@@ -224,7 +227,9 @@ export function AdminPanelClient({
       {abaAtiva === "usuarios" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900">Usuários Cadastrados</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Usuários Cadastrados
+            </h2>
             <button
               onClick={() => {
                 setModalUsuario(true);
@@ -248,10 +253,14 @@ export function AdminPanelClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {usuarios.map((u: any) => (
+                {usuarios.map((u) => (
                   <tr key={u.idAuth} className="hover:bg-slate-50">
-                    <td className="py-3.5 px-4 font-bold text-slate-900">{u.nome}</td>
-                    <td className="py-3.5 px-4 font-mono text-slate-600">{u.email}</td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                      {u.nome}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-slate-600">
+                      {u.email}
+                    </td>
                     <td className="py-3.5 px-4">
                       <span className="capitalize px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px]">
                         {u.papel}
@@ -259,7 +268,9 @@ export function AdminPanelClient({
                     </td>
                     <td className="py-3.5 px-4 text-slate-700 font-medium">
                       {u.nomeEscola ? (
-                        <span className="text-emerald-700 font-bold">{u.nomeEscola}</span>
+                        <span className="text-emerald-700 font-bold">
+                          {u.nomeEscola}
+                        </span>
                       ) : (
                         <span className="text-slate-400">-</span>
                       )}
@@ -276,7 +287,9 @@ export function AdminPanelClient({
       {abaAtiva === "escolas" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900">Unidades Escolares</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Unidades Escolares
+            </h2>
             <button
               onClick={() => {
                 setModalEscola(true);
@@ -290,7 +303,7 @@ export function AdminPanelClient({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {escolas.map((e: any) => (
+            {escolas.map((e) => (
               <div
                 key={e.id}
                 className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:shadow-md transition shadow-sm"
@@ -300,7 +313,9 @@ export function AdminPanelClient({
                     <School className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">{e.nome}</h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {e.nome}
+                    </h3>
                     <span className="text-[10px] font-mono text-slate-500 font-medium">
                       Código #{e.id.toString().padStart(3, "0")}
                     </span>
@@ -325,7 +340,9 @@ export function AdminPanelClient({
       {abaAtiva === "produtos" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900">Catálogo de Produtos</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Catálogo de Produtos
+            </h2>
             <button
               onClick={() => {
                 setModalProduto(true);
@@ -350,10 +367,14 @@ export function AdminPanelClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {produtos.map((p: any) => (
+                {produtos.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="py-3.5 px-4 font-bold text-slate-900">{p.nome}</td>
-                    <td className="py-3.5 px-4 capitalize font-medium">{p.categoria}</td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                      {p.nome}
+                    </td>
+                    <td className="py-3.5 px-4 capitalize font-medium">
+                      {p.categoria}
+                    </td>
                     <td className="py-3.5 px-4 font-mono">{p.unidade}</td>
                     <td className="py-3.5 px-4 text-right font-mono font-extrabold text-slate-900">
                       R$ {Number(p.preco).toFixed(2)}
@@ -373,7 +394,9 @@ export function AdminPanelClient({
       {abaAtiva === "fornecedores" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900">Fornecedores Credenciados</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Fornecedores Credenciados
+            </h2>
             <button
               onClick={() => {
                 setModalFornecedor(true);
@@ -387,7 +410,7 @@ export function AdminPanelClient({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {fornecedores.map((f: any) => (
+            {fornecedores.map((f) => (
               <div
                 key={f.id}
                 className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:shadow-md transition shadow-sm"
@@ -397,7 +420,9 @@ export function AdminPanelClient({
                     <Truck className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">{f.nome}</h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {f.nome}
+                    </h3>
                     <span className="text-[10px] font-mono text-slate-500 font-medium">
                       CNPJ: {f.cnpj || "Não cadastrado"}
                     </span>
@@ -423,7 +448,9 @@ export function AdminPanelClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-900">Cadastrar Novo Usuário</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                Cadastrar Novo Usuário
+              </h3>
               <button
                 onClick={() => setModalUsuario(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
@@ -466,7 +493,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Senha</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Senha
+                </label>
                 <input
                   type="password"
                   required
@@ -482,7 +511,7 @@ export function AdminPanelClient({
                 </label>
                 <select
                   value={uPapel}
-                  onChange={(e) => setUPapel(e.target.value as any)}
+                  onChange={(e) => setUPapel(e.target.value as PapelUsuario)}
                   className="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-purple-600"
                 >
                   <option value="escola">Escola (Apenas sua unidade)</option>
@@ -497,7 +526,7 @@ export function AdminPanelClient({
                     Unidade Escolar Vinculada
                   </label>
                   <select
-                    value={uIdEscola}
+                    value={uIdEscola || escolas[0]?.id?.toString() || ""}
                     onChange={(e) => setUIdEscola(e.target.value)}
                     className="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-purple-600"
                   >
@@ -536,7 +565,9 @@ export function AdminPanelClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-900">Cadastrar Unidade Escolar</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                Cadastrar Unidade Escolar
+              </h3>
               <button
                 onClick={() => setModalEscola(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
@@ -567,7 +598,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Endereço</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Endereço
+                </label>
                 <input
                   type="text"
                   value={eEndereco}
@@ -578,7 +611,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Telefone</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Telefone
+                </label>
                 <input
                   type="text"
                   value={eTelefone}
@@ -614,7 +649,9 @@ export function AdminPanelClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-900">Cadastrar Produto</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                Cadastrar Produto
+              </h3>
               <button
                 onClick={() => setModalProduto(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
@@ -651,7 +688,9 @@ export function AdminPanelClient({
                   </label>
                   <select
                     value={pCategoria}
-                    onChange={(e) => setPCategoria(e.target.value as any)}
+                    onChange={(e) =>
+                      setPCategoria(e.target.value as CategoriaProduto)
+                    }
                     className="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-purple-600"
                   >
                     <option value="alimento">Alimento</option>
@@ -709,7 +748,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Descrição
+                </label>
                 <textarea
                   rows={2}
                   value={pDescricao}
@@ -744,7 +785,9 @@ export function AdminPanelClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-900">Cadastrar Fornecedor</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                Cadastrar Fornecedor
+              </h3>
               <button
                 onClick={() => setModalFornecedor(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
@@ -774,7 +817,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">CNPJ</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  CNPJ
+                </label>
                 <input
                   type="text"
                   value={fCnpj}
@@ -797,7 +842,9 @@ export function AdminPanelClient({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Telefone</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Telefone
+                </label>
                 <input
                   type="text"
                   value={fTelefone}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { darBaixaEstoqueAction } from "@/actions/estoque-actions";
+import { useAppStore } from "@/context/app-store";
+import { isValidadeProxima } from "@/lib/alertas";
 import {
   Boxes,
   School,
@@ -12,7 +13,6 @@ import {
   MinusCircle,
   Search,
   X,
-  Package,
 } from "lucide-react";
 
 interface LoteSecretaria {
@@ -35,11 +35,15 @@ export function EstoqueSecretariaClient({
   escolas: { id: number; nome: string }[];
   lotesIniciais: LoteSecretaria[];
 }) {
+  const { darBaixaEstoque } = useAppStore();
+
   const [filtroEscola, setFiltroEscola] = useState<string>("todas");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("todas");
   const [busca, setBusca] = useState("");
 
-  const [loteParaBaixa, setLoteParaBaixa] = useState<LoteSecretaria | null>(null);
+  const [loteParaBaixa, setLoteParaBaixa] = useState<LoteSecretaria | null>(
+    null
+  );
   const [tipoBaixa, setTipoBaixa] = useState<
     "baixa_consumo" | "baixa_vencido" | "baixa_perda" | "ajuste"
   >("baixa_consumo");
@@ -53,17 +57,11 @@ export function EstoqueSecretariaClient({
     ...Array.from(new Set(lotesIniciais.map((l) => l.categoria))),
   ];
 
-  const isValidadeProxima = (validadeStr: string | null) => {
-    if (!validadeStr) return false;
-    const dataVal = new Date(validadeStr + "T00:00:00");
-    const hoje = new Date();
-    const diffDias = Math.ceil((dataVal.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDias <= 14;
-  };
-
   const lotesFiltrados = lotesIniciais.filter((l) => {
-    const matchEscola = filtroEscola === "todas" || l.idEscola.toString() === filtroEscola;
-    const matchCat = filtroCategoria === "todas" || l.categoria === filtroCategoria;
+    const matchEscola =
+      filtroEscola === "todas" || l.idEscola.toString() === filtroEscola;
+    const matchCat =
+      filtroCategoria === "todas" || l.categoria === filtroCategoria;
     const matchBusca =
       l.nomeProduto.toLowerCase().includes(busca.toLowerCase()) ||
       l.nomeEscola.toLowerCase().includes(busca.toLowerCase());
@@ -72,8 +70,13 @@ export function EstoqueSecretariaClient({
 
   const handleConfirmarBaixa = async () => {
     if (!loteParaBaixa) return;
-    if (quantidadeBaixa <= 0 || quantidadeBaixa > loteParaBaixa.quantidadeAtual) {
-      setErro(`A quantidade deve ser entre 1 e ${loteParaBaixa.quantidadeAtual}`);
+    if (
+      quantidadeBaixa <= 0 ||
+      quantidadeBaixa > loteParaBaixa.quantidadeAtual
+    ) {
+      setErro(
+        `A quantidade deve ser entre 1 e ${loteParaBaixa.quantidadeAtual}`
+      );
       return;
     }
 
@@ -81,7 +84,7 @@ export function EstoqueSecretariaClient({
     setErro(null);
 
     try {
-      const res = await darBaixaEstoqueAction({
+      const res = darBaixaEstoque({
         idEstoqueLote: loteParaBaixa.idLote,
         quantidade: quantidadeBaixa,
         tipo: tipoBaixa,
@@ -95,8 +98,8 @@ export function EstoqueSecretariaClient({
         setQuantidadeBaixa(1);
         setMotivoBaixa("");
       }
-    } catch (err: any) {
-      setErro(err.message || "Erro inesperado.");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
       setIsSubmitting(false);
     }
@@ -162,7 +165,8 @@ export function EstoqueSecretariaClient({
             Nenhum lote registrado para os filtros selecionados
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Quando os pedidos são marcados como entregues pela Secretaria, os itens dão entrada no estoque da unidade correspondente.
+            Quando os pedidos são marcados como entregues pela Secretaria, os
+            itens dão entrada no estoque da unidade correspondente.
           </p>
         </div>
       ) : (
@@ -185,7 +189,10 @@ export function EstoqueSecretariaClient({
                   const vencendoLogo = isValidadeProxima(lote.validade);
 
                   return (
-                    <tr key={lote.idLote} className="hover:bg-slate-50/70 transition">
+                    <tr
+                      key={lote.idLote}
+                      className="hover:bg-slate-50/70 transition"
+                    >
                       <td className="py-3.5 px-4 font-bold text-slate-900">
                         <div className="flex items-center gap-1.5">
                           <School className="w-4 h-4 text-blue-600 shrink-0" />
@@ -193,7 +200,9 @@ export function EstoqueSecretariaClient({
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-bold text-slate-900">{lote.nomeProduto}</span>
+                        <span className="font-bold text-slate-900">
+                          {lote.nomeProduto}
+                        </span>
                         <span className="block text-[10px] font-mono text-slate-500 font-normal">
                           Lote #{lote.idLote.toString().padStart(4, "0")}
                         </span>
@@ -208,7 +217,9 @@ export function EstoqueSecretariaClient({
                           <div className="flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
                             <span>
-                              {new Date(lote.validade + "T00:00:00").toLocaleDateString("pt-BR")}
+                              {new Date(
+                                lote.validade + "T00:00:00"
+                              ).toLocaleDateString("pt-BR")}
                             </span>
                           </div>
                         ) : (
@@ -232,7 +243,9 @@ export function EstoqueSecretariaClient({
                         <span className="font-mono text-sm font-extrabold text-slate-900">
                           {lote.quantidadeAtual}
                         </span>
-                        <span className="text-[11px] text-slate-500 font-medium ml-1">{lote.unidade}</span>
+                        <span className="text-[11px] text-slate-500 font-medium ml-1">
+                          {lote.unidade}
+                        </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <button
@@ -270,7 +283,9 @@ export function EstoqueSecretariaClient({
                   <MinusCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Baixa de Estoque</h3>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Baixa de Estoque
+                  </h3>
                   <p className="text-xs text-slate-500">
                     {loteParaBaixa.nomeEscola} — {loteParaBaixa.nomeProduto}
                   </p>
@@ -293,7 +308,9 @@ export function EstoqueSecretariaClient({
 
             <div className="mt-4 space-y-4">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs flex justify-between items-center">
-                <span className="text-slate-600 font-medium">Saldo atual do lote:</span>
+                <span className="text-slate-600 font-medium">
+                  Saldo atual do lote:
+                </span>
                 <span className="font-mono font-bold text-slate-900 text-sm">
                   {loteParaBaixa.quantidadeAtual} {loteParaBaixa.unidade}
                 </span>
@@ -301,17 +318,34 @@ export function EstoqueSecretariaClient({
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Tipo / Justificativa da Baixa <span className="text-red-500">*</span>
+                  Tipo / Justificativa da Baixa{" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={tipoBaixa}
-                  onChange={(e) => setTipoBaixa(e.target.value as any)}
+                  onChange={(e) =>
+                    setTipoBaixa(
+                      e.target.value as
+                        | "baixa_consumo"
+                        | "baixa_vencido"
+                        | "baixa_perda"
+                        | "ajuste"
+                    )
+                  }
                   className="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-900 font-semibold focus:border-emerald-600 focus:outline-none"
                 >
-                  <option value="baixa_consumo">Consumo Regular (Merenda / Limpeza / Aulas)</option>
-                  <option value="baixa_vencido">Produto Vencido / Descarte Sanitário</option>
-                  <option value="baixa_perda">Avaria / Perda Física / Deterioração</option>
-                  <option value="ajuste">Ajuste de Inventário / Contagem Física</option>
+                  <option value="baixa_consumo">
+                    Consumo Regular (Merenda / Limpeza / Aulas)
+                  </option>
+                  <option value="baixa_vencido">
+                    Produto Vencido / Descarte Sanitário
+                  </option>
+                  <option value="baixa_perda">
+                    Avaria / Perda Física / Deterioração
+                  </option>
+                  <option value="ajuste">
+                    Ajuste de Inventário / Contagem Física
+                  </option>
                 </select>
               </div>
 

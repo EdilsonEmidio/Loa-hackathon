@@ -1,84 +1,67 @@
-import { db } from "@/db/client";
-import { produtos, estoqueLotes, escolas } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import type { AlertaItem, AppDatabase } from "./types";
 
-export interface AlertaItem {
-  tipo: "estoque_baixo" | "validade_proxima";
-  idEscola: number;
-  nomeEscola: string;
-  idProduto: number;
-  nomeProduto: string;
-  detalhe: string;
-  quantidadeAtual: number;
-  estoqueMinimo?: number;
-  validade?: string | null;
+export type { AlertaItem };
+
+export function isValidadeProxima(validadeStr: string | null): boolean {
+  if (!validadeStr) return false;
+  const dataVal = new Date(validadeStr + "T00:00:00");
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const diffDias = Math.ceil((dataVal.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDias <= 14;
 }
 
-export async function buscarAlertas(idEscolaFiltro?: number | null): Promise<AlertaItem[]> {
+/**
+ * Calcula alertas de estoque baixo e validade próxima diretamente a partir do estado local.
+ */
+export function calcularAlertas(
+  db: AppDatabase,
+  idEscolaFiltro?: number | null
+): AlertaItem[] {
   const alertas: AlertaItem[] = [];
 
-  // 1. Alerta de Estoque Baixo: soma da quantidade de cada produto por escola <= estoqueMinimo
-  // Agrupando por escola e produto
-  const saldosPorProduto = await db
-    .select({
-      idEscola: escolas.id,
-      nomeEscola: escolas.nome,
-      idProduto: produtos.id,
-      nomeProduto: produtos.nome,
-      estoqueMinimo: produtos.estoqueMinimo,
-      quantidadeTotal: sql<number>`COALESCE(SUM(${estoqueLotes.quantidadeAtual}), 0)::int`,
-    })
-    .from(produtos)
-    .crossJoin(escolas)
-    .leftJoin(
-      estoqueLotes,
-      sql`${estoqueLotes.idProduto} = ${produtos.id} AND ${estoqueLotes.idEscola} = ${escolas.id}`
-    )
-    .where(idEscolaFiltro ? eq(escolas.id, idEscolaFiltro) : sql`true`)
-    .groupBy(escolas.id, escolas.nome, produtos.id, produtos.nome, produtos.estoqueMinimo);
+  const escolasAlvo = idEscolaFiltro
+    ? db.escolas.filter((e) => e.id === idEscolaFiltro)
+    : db.escolas;
 
-  for (const item of saldosPorProduto) {
-    if (item.quantidadeTotal <= item.estoqueMinimo) {
-      alertas.push({
-        tipo: "estoque_baixo",
-        idEscola: item.idEscola,
-        nomeEscola: item.nomeEscola,
-        idProduto: item.idProduto,
-        nomeProduto: item.nomeProduto,
-        quantidadeAtual: item.quantidadeTotal,
-        estoqueMinimo: item.estoqueMinimo,
-        detalhe: `Estoque crítico: ${item.quantidadeTotal} em estoque (mínimo: ${item.estoqueMinimo})`,
-      });
+  // 1. Alerta de Estoque Baixo: soma da quantidade de cada produto por escola <= estoqueMinimo
+  for (const escola of escolasAlvo) {
+    for (const produto of db.produtos) {
+      const quantidadeTotal = db.estoqueLotes
+        .filter((l) => l.idEscola === escola.id && l.idProduto === produto.id)
+        .reduce((acc, l) => acc + l.quantidadeAtual, 0);
+
+      if (quantidadeTotal <= produto.estoqueMinimo) {
+        alertas.push({
+          tipo: "estoque_baixo",
+          idEscola: escola.id,
+          nomeEscola: escola.nome,
+          idProduto: produto.id,
+          nomeProduto: produto.nome,
+          quantidadeAtual: quantidadeTotal,
+          estoqueMinimo: produto.estoqueMinimo,
+          detalhe: `Estoque crítico: ${quantidadeTotal} em estoque (mínimo: ${produto.estoqueMinimo})`,
+        });
+      }
     }
   }
 
   // 2. Alerta de Validade Próxima: lotes com validade até hoje + 14 dias e quantidade > 0
-  const lotesVencendo = await db
-    .select({
-      idEscola: estoqueLotes.idEscola,
-      nomeEscola: escolas.nome,
-      idProduto: produtos.id,
-      nomeProduto: produtos.nome,
-      validade: estoqueLotes.validade,
-      quantidadeAtual: estoqueLotes.quantidadeAtual,
-    })
-    .from(estoqueLotes)
-    .innerJoin(escolas, eq(estoqueLotes.idEscola, escolas.id))
-    .innerJoin(produtos, eq(estoqueLotes.idProduto, produtos.id))
-    .where(
-      sql`${estoqueLotes.quantidadeAtual} > 0 
-          AND ${estoqueLotes.validade} IS NOT NULL 
-          AND ${estoqueLotes.validade} <= CURRENT_DATE + INTERVAL '14 days'
-          ${idEscolaFiltro ? sql`AND ${estoqueLotes.idEscola} = ${idEscolaFiltro}` : sql``}`
-    );
+  for (const lote of db.estoqueLotes) {
+    if (lote.quantidadeAtual <= 0 || !lote.validade) continue;
+    if (idEscolaFiltro && lote.idEscola !== idEscolaFiltro) continue;
+    if (!isValidadeProxima(lote.validade)) continue;
 
-  for (const lote of lotesVencendo) {
+    const escola = db.escolas.find((e) => e.id === lote.idEscola);
+    const produto = db.produtos.find((p) => p.id === lote.idProduto);
+    if (!escola || !produto) continue;
+
     alertas.push({
       tipo: "validade_proxima",
-      idEscola: lote.idEscola,
-      nomeEscola: lote.nomeEscola,
-      idProduto: lote.idProduto,
-      nomeProduto: lote.nomeProduto,
+      idEscola: escola.id,
+      nomeEscola: escola.nome,
+      idProduto: produto.id,
+      nomeProduto: produto.nome,
       quantidadeAtual: lote.quantidadeAtual,
       validade: lote.validade,
       detalhe: `Vencimento próximo em ${lote.validade} (${lote.quantidadeAtual} unidades)`,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { cancelarPedidoAction } from "@/actions/pedido-actions";
+import { useAppStore } from "@/context/app-store";
 import {
   Clock,
   CheckCircle2,
@@ -26,15 +26,15 @@ interface ItemPedido {
 interface HistoricoStatus {
   status: string;
   observacao: string | null;
-  data: Date;
+  data: Date | string;
 }
 
 interface PedidoCardProps {
   id: number;
   status: "em_analise" | "confirmado" | "em_preparo" | "entregue" | "cancelado";
-  dataSolicitacao: Date;
+  dataSolicitacao: Date | string;
   dataPrevistaEntrega: string | null;
-  dataEntrega: Date | null;
+  dataEntrega: Date | string | null;
   observacao: string | null;
   motivoCancelamento: string | null;
   itens: ItemPedido[];
@@ -75,9 +75,12 @@ export function ListaPedidosEscolaClient({
 }: {
   pedidosIniciais: PedidoCardProps[];
 }) {
+  const { cancelarPedido } = useAppStore();
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [pedidoDetalhe, setPedidoDetalhe] = useState<PedidoCardProps | null>(null);
-  const [pedidoCancelando, setPedidoCancelando] = useState<PedidoCardProps | null>(null);
+  const [pedidoCancelando, setPedidoCancelando] = useState<PedidoCardProps | null>(
+    null
+  );
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [loadingAcao, setLoadingAcao] = useState(false);
@@ -97,15 +100,15 @@ export function ListaPedidosEscolaClient({
     setLoadingAcao(true);
     setErroAcao(null);
     try {
-      const res = await cancelarPedidoAction(pedidoCancelando.id, motivoCancelamento);
+      const res = cancelarPedido(pedidoCancelando.id, motivoCancelamento);
       if (!res.success) {
         setErroAcao(res.error || "Erro ao cancelar pedido.");
       } else {
         setPedidoCancelando(null);
         setMotivoCancelamento("");
       }
-    } catch (err: any) {
-      setErroAcao(err.message || "Erro inesperado.");
+    } catch (err) {
+      setErroAcao(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
       setLoadingAcao(false);
     }
@@ -160,7 +163,8 @@ export function ListaPedidosEscolaClient({
             Nenhum pedido encontrado
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Não há registros de pedidos para o status selecionado. Use o botão "Fazer Novo Pedido" para solicitar materiais.
+            Não há registros de pedidos para o status selecionado. Use o botão
+            &quot;Fazer Novo Pedido&quot; para solicitar materiais.
           </p>
         </div>
       ) : (
@@ -233,7 +237,9 @@ export function ListaPedidosEscolaClient({
                           key={idx}
                           className="flex items-center justify-between text-xs text-slate-700"
                         >
-                          <span className="truncate pr-2 font-medium">{item.nomeProduto}</span>
+                          <span className="truncate pr-2 font-medium">
+                            {item.nomeProduto}
+                          </span>
                           <span className="shrink-0 font-bold text-slate-900">
                             {item.quantidade} {item.unidade}
                           </span>
@@ -251,14 +257,15 @@ export function ListaPedidosEscolaClient({
                 {/* Rodapé do Card com Ações */}
                 <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
                   <div>
-                    <span className="text-[11px] text-slate-500 font-medium block">Total Est.</span>
+                    <span className="text-[11px] text-slate-500 font-medium block">
+                      Total Est.
+                    </span>
                     <span className="text-base font-extrabold text-slate-900 font-mono">
                       R$ {ped.valorTotal.toFixed(2)}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Botão de Cancelamento: Visível somente se em_analise */}
                     {ped.status === "em_analise" && (
                       <button
                         type="button"
@@ -296,7 +303,9 @@ export function ListaPedidosEscolaClient({
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span>Pedido #{pedidoDetalhe.id.toString().padStart(4, "0")}</span>
+                  <span>
+                    Pedido #{pedidoDetalhe.id.toString().padStart(4, "0")}
+                  </span>
                   <span
                     className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
                       statusConfig[pedidoDetalhe.status].color
@@ -347,7 +356,8 @@ export function ListaPedidosEscolaClient({
                             R$ {Number(it.precoUnitario).toFixed(2)}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                            R$ {(Number(it.precoUnitario) * it.quantidade).toFixed(2)}
+                            R${" "}
+                            {(Number(it.precoUnitario) * it.quantidade).toFixed(2)}
                           </td>
                         </tr>
                       ))}
@@ -369,7 +379,9 @@ export function ListaPedidosEscolaClient({
               {/* Observação */}
               {pedidoDetalhe.observacao && (
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
-                  <strong className="text-slate-900 block mb-1">Observações da Escola:</strong>
+                  <strong className="text-slate-900 block mb-1">
+                    Observações da Escola:
+                  </strong>
                   {pedidoDetalhe.observacao}
                 </div>
               )}
@@ -384,13 +396,17 @@ export function ListaPedidosEscolaClient({
                     <div key={i} className="relative">
                       <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-600 ring-4 ring-white" />
                       <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <span className="capitalize">{h.status.replace("_", " ")}</span>
+                        <span className="capitalize">
+                          {h.status.replace("_", " ")}
+                        </span>
                         <span className="text-[10px] text-slate-500 font-normal">
                           {new Date(h.data).toLocaleString("pt-BR")}
                         </span>
                       </div>
                       {h.observacao && (
-                        <p className="text-[11px] text-slate-600 mt-0.5">{h.observacao}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          {h.observacao}
+                        </p>
                       )}
                     </div>
                   ))}
@@ -421,7 +437,8 @@ export function ListaPedidosEscolaClient({
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Cancelar Pedido #{pedidoCancelando.id.toString().padStart(4, "0")}
+                  Cancelar Pedido #
+                  {pedidoCancelando.id.toString().padStart(4, "0")}
                 </h3>
                 <p className="text-xs text-slate-500">
                   Esta ação não poderá ser desfeita após a confirmação.

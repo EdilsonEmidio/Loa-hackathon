@@ -1,37 +1,48 @@
-import { requireRole } from "@/lib/auth";
-import { db } from "@/db/client";
-import { produtos, estoqueLotes, escolas } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { EstoqueSecretariaClient } from "./estoque-secretaria-client";
+"use client";
+
+import { useMemo } from "react";
 import { Boxes } from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import { EstoqueSecretariaClient } from "./estoque-secretaria-client";
 
-export default async function EstoqueSecretariaPage() {
-  await requireRole(["secretaria", "administrador"]);
+export default function EstoqueSecretariaPage() {
+  const { db } = useAppStore();
 
-  // 1. Lista de Escolas
-  const listaEscolas = await db
-    .select({ id: escolas.id, nome: escolas.nome })
-    .from(escolas)
-    .orderBy(escolas.nome);
+  const listaEscolas = useMemo(
+    () =>
+      [...db.escolas]
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+        .map((e) => ({ id: e.id, nome: e.nome })),
+    [db.escolas]
+  );
 
-  // 2. Todos os lotes de todas as escolas
-  const lotesRaw = await db
-    .select({
-      idLote: estoqueLotes.id,
-      idEscola: estoqueLotes.idEscola,
-      nomeEscola: escolas.nome,
-      idProduto: produtos.id,
-      nomeProduto: produtos.nome,
-      categoria: produtos.categoria,
-      unidade: produtos.unidade,
-      estoqueMinimo: produtos.estoqueMinimo,
-      validade: estoqueLotes.validade,
-      quantidadeAtual: estoqueLotes.quantidadeAtual,
-    })
-    .from(estoqueLotes)
-    .innerJoin(escolas, eq(estoqueLotes.idEscola, escolas.id))
-    .innerJoin(produtos, eq(estoqueLotes.idProduto, produtos.id))
-    .orderBy(escolas.nome, produtos.categoria, produtos.nome);
+  const lotesRaw = useMemo(() => {
+    return db.estoqueLotes
+      .map((l) => {
+        const escola = db.escolas.find((e) => e.id === l.idEscola);
+        const prod = db.produtos.find((p) => p.id === l.idProduto);
+
+        return {
+          idLote: l.id,
+          idEscola: l.idEscola,
+          nomeEscola: escola?.nome || `Escola #${l.idEscola}`,
+          idProduto: l.idProduto,
+          nomeProduto: prod?.nome || `Produto #${l.idProduto}`,
+          categoria: prod?.categoria || "outros",
+          unidade: prod?.unidade || "un",
+          estoqueMinimo: prod?.estoqueMinimo ?? 10,
+          validade: l.validade,
+          quantidadeAtual: l.quantidadeAtual,
+        };
+      })
+      .sort((a, b) => {
+        const esc = a.nomeEscola.localeCompare(b.nomeEscola);
+        if (esc !== 0) return esc;
+        const cat = a.categoria.localeCompare(b.categoria);
+        if (cat !== 0) return cat;
+        return a.nomeProduto.localeCompare(b.nomeProduto);
+      });
+  }, [db.estoqueLotes, db.escolas, db.produtos]);
 
   return (
     <div className="space-y-6">
@@ -42,7 +53,8 @@ export default async function EstoqueSecretariaPage() {
             <span>Controle Central de Estoques Escolares</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Supervisão e auditoria de saldos, prazos de validade e baixas em todas as unidades da rede
+            Supervisão e auditoria de saldos, prazos de validade e baixas em
+            todas as unidades da rede
           </p>
         </div>
       </div>

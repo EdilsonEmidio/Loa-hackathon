@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useAppStore } from "@/context/app-store";
 import {
-  confirmarPedidoAction,
-  iniciarPreparoAction,
-  marcarEntregueAction,
-  cancelarPedidoAction,
-} from "@/actions/pedido-actions";
+  exportarRelatorioPedidosExcel,
+  importarProdutosExcel,
+} from "@/lib/excel";
 import {
   Clock,
   CheckCircle2,
@@ -15,9 +14,7 @@ import {
   XCircle,
   FileSpreadsheet,
   Upload,
-  Calendar,
   School,
-  AlertCircle,
   Eye,
   X,
   Package,
@@ -37,7 +34,7 @@ interface ItemPedido {
 interface HistoricoStatus {
   status: string;
   observacao: string | null;
-  data: Date;
+  data: Date | string;
 }
 
 interface PedidoSecretaria {
@@ -46,9 +43,9 @@ interface PedidoSecretaria {
   nomeEscola: string;
   nomeSolicitante: string;
   status: "em_analise" | "confirmado" | "em_preparo" | "entregue" | "cancelado";
-  dataSolicitacao: Date;
+  dataSolicitacao: Date | string;
   dataPrevistaEntrega: string | null;
-  dataEntrega: Date | null;
+  dataEntrega: Date | string | null;
   observacao: string | null;
   motivoCancelamento: string | null;
   itens: ItemPedido[];
@@ -93,19 +90,39 @@ export function PainelSecretariaClient({
   escolas: { id: number; nome: string }[];
   fornecedores: { id: number; nome: string }[];
 }) {
+  const {
+    db,
+    confirmarPedido,
+    iniciarPreparo,
+    marcarEntregue,
+    cancelarPedido,
+    importarProdutosEmLote,
+  } = useAppStore();
+
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroEscola, setFiltroEscola] = useState<string>("todas");
-  const [pedidoDetalhe, setPedidoDetalhe] = useState<PedidoSecretaria | null>(null);
+  const [pedidoDetalhe, setPedidoDetalhe] = useState<PedidoSecretaria | null>(
+    null
+  );
 
   // Estados de modais de transição de status
-  const [pedidoPreparo, setPedidoPreparo] = useState<PedidoSecretaria | null>(null);
+  const [pedidoPreparo, setPedidoPreparo] = useState<PedidoSecretaria | null>(
+    null
+  );
   const [dataPrevisao, setDataPrevisao] = useState("");
-  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<Record<number, number>>({});
+  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<
+    Record<number, number>
+  >({});
 
-  const [pedidoEntrega, setPedidoEntrega] = useState<PedidoSecretaria | null>(null);
-  const [validadesPorItem, setValidadesPorItem] = useState<Record<number, string>>({});
+  const [pedidoEntrega, setPedidoEntrega] = useState<PedidoSecretaria | null>(
+    null
+  );
+  const [validadesPorItem, setValidadesPorItem] = useState<
+    Record<number, string>
+  >({});
 
-  const [pedidoCancelando, setPedidoCancelando] = useState<PedidoSecretaria | null>(null);
+  const [pedidoCancelando, setPedidoCancelando] =
+    useState<PedidoSecretaria | null>(null);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
 
   const [modalImportarAberto, setModalImportarAberto] = useState(false);
@@ -117,6 +134,7 @@ export function PainelSecretariaClient({
   } | null>(null);
 
   const [loadingAcao, setLoadingAcao] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,7 +142,8 @@ export function PainelSecretariaClient({
   // Filtragem
   const pedidosFiltrados = pedidosIniciais.filter((p) => {
     const matchStatus = filtroStatus === "todos" || p.status === filtroStatus;
-    const matchEscola = filtroEscola === "todas" || p.idEscola.toString() === filtroEscola;
+    const matchEscola =
+      filtroEscola === "todas" || p.idEscola.toString() === filtroEscola;
     return matchStatus && matchEscola;
   });
 
@@ -132,7 +151,7 @@ export function PainelSecretariaClient({
   const handleConfirmarPedido = async (idPedido: number) => {
     setLoadingAcao(true);
     try {
-      const res = await confirmarPedidoAction(idPedido);
+      const res = confirmarPedido(idPedido);
       if (!res.success) alert(res.error);
     } finally {
       setLoadingAcao(false);
@@ -147,7 +166,7 @@ export function PainelSecretariaClient({
     setLoadingAcao(true);
     setErroAcao(null);
     try {
-      const res = await iniciarPreparoAction(
+      const res = iniciarPreparo(
         pedidoPreparo.id,
         dataPrevisao,
         fornecedoresSelecionados
@@ -168,7 +187,7 @@ export function PainelSecretariaClient({
     setLoadingAcao(true);
     setErroAcao(null);
     try {
-      const res = await marcarEntregueAction(pedidoEntrega.id, validadesPorItem);
+      const res = marcarEntregue(pedidoEntrega.id, validadesPorItem);
       if (!res.success) {
         setErroAcao(res.error || "Erro ao confirmar entrega.");
       } else {
@@ -188,7 +207,7 @@ export function PainelSecretariaClient({
     setLoadingAcao(true);
     setErroAcao(null);
     try {
-      const res = await cancelarPedidoAction(pedidoCancelando.id, motivoCancelamento);
+      const res = cancelarPedido(pedidoCancelando.id, motivoCancelamento);
       if (!res.success) {
         setErroAcao(res.error || "Erro ao cancelar pedido.");
       } else {
@@ -200,7 +219,7 @@ export function PainelSecretariaClient({
     }
   };
 
-  // Upload Excel
+  // Importação Excel 100% client-side
   const handleUploadPlanilha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!arquivoUpload) return;
@@ -208,24 +227,53 @@ export function PainelSecretariaClient({
     setLoadingAcao(true);
     setResultadoImportacao(null);
     try {
-      const formData = new FormData();
-      formData.append("planilha", arquivoUpload);
+      const { produtos, erros } = await importarProdutosExcel(arquivoUpload);
+      if (produtos.length === 0) {
+        setResultadoImportacao({
+          error:
+            erros[0] ||
+            "Nenhum produto válido encontrado na planilha selecionada.",
+        });
+        return;
+      }
 
-      const resp = await fetch("/api/produtos/importar", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        setResultadoImportacao({ error: data.error || "Erro no envio." });
+      const res = importarProdutosEmLote(produtos);
+      if (!res.success) {
+        setResultadoImportacao({
+          error: res.error || "Erro ao importar produtos.",
+        });
       } else {
-        setResultadoImportacao({ success: true, importados: data.importados });
+        setResultadoImportacao({
+          success: true,
+          importados: res.data?.importados ?? produtos.length,
+        });
         setArquivoUpload(null);
       }
-    } catch (err: any) {
-      setResultadoImportacao({ error: err.message });
+    } catch (err) {
+      setResultadoImportacao({
+        error:
+          err instanceof Error
+            ? err.message
+            : "Falha ao processar arquivo Excel.",
+      });
     } finally {
       setLoadingAcao(false);
+    }
+  };
+
+  // Exportação Excel 100% client-side
+  const handleExportarRelatorio = async () => {
+    setExportando(true);
+    try {
+      await exportarRelatorioPedidosExcel(db, filtroStatus, filtroEscola);
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? `Erro ao exportar relatório: ${err.message}`
+          : "Erro ao exportar relatório."
+      );
+    } finally {
+      setExportando(false);
     }
   };
 
@@ -243,7 +291,9 @@ export function PainelSecretariaClient({
               onChange={(e) => setFiltroEscola(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
             >
-              <option value="todas">Todas as Escolas ({escolas.length})</option>
+              <option value="todas">
+                Todas as Escolas ({escolas.length})
+              </option>
               {escolas.map((esc) => (
                 <option key={esc.id} value={esc.id.toString()}>
                   {esc.nome}
@@ -291,14 +341,15 @@ export function PainelSecretariaClient({
             <span>Importar (.xlsx)</span>
           </button>
 
-          <a
-            href={`/api/relatorios/pedidos?status=${filtroStatus}&escola=${filtroEscola}`}
-            download
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-sm shadow-emerald-500/20 transition cursor-pointer"
+          <button
+            type="button"
+            disabled={exportando}
+            onClick={handleExportarRelatorio}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-bold text-white shadow-sm shadow-emerald-500/20 transition cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>Exportar Relatório</span>
-          </a>
+            <span>{exportando ? "Gerando..." : "Exportar Relatório"}</span>
+          </button>
         </div>
       </div>
 
@@ -310,7 +361,8 @@ export function PainelSecretariaClient({
             Nenhum pedido encontrado
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Ajuste os filtros de status ou de unidade escolar para localizar os registros desejados.
+            Ajuste os filtros de status ou de unidade escolar para localizar os
+            registros desejados.
           </p>
         </div>
       ) : (
@@ -325,7 +377,9 @@ export function PainelSecretariaClient({
                   <th className="py-3.5 px-4">Status Atual</th>
                   <th className="py-3.5 px-4">Previsão Entrega</th>
                   <th className="py-3.5 px-4 text-right">Total Est.</th>
-                  <th className="py-3.5 px-4 text-center">Ações de Tramitação</th>
+                  <th className="py-3.5 px-4 text-center">
+                    Ações de Tramitação
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -340,14 +394,18 @@ export function PainelSecretariaClient({
                           <span className="font-mono text-xs text-blue-600 font-bold">
                             #{ped.id.toString().padStart(4, "0")}
                           </span>
-                          <span className="text-slate-900 font-bold">{ped.nomeEscola}</span>
+                          <span className="text-slate-900 font-bold">
+                            {ped.nomeEscola}
+                          </span>
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium">
                         {ped.nomeSolicitante}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-600">
-                        {new Date(ped.dataSolicitacao).toLocaleDateString("pt-BR")}
+                        {new Date(ped.dataSolicitacao).toLocaleDateString(
+                          "pt-BR"
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         <span
@@ -373,7 +431,6 @@ export function PainelSecretariaClient({
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Transição 1: Confirmar se em_analise */}
                           {ped.status === "em_analise" && (
                             <button
                               type="button"
@@ -385,13 +442,13 @@ export function PainelSecretariaClient({
                             </button>
                           )}
 
-                          {/* Transição 2: Iniciar preparo se confirmado */}
                           {ped.status === "confirmado" && (
                             <button
                               type="button"
                               onClick={() => {
                                 setPedidoPreparo(ped);
                                 setDataPrevisao("");
+                                setFornecedoresSelecionados({});
                                 setErroAcao(null);
                               }}
                               className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer shadow-sm"
@@ -401,7 +458,6 @@ export function PainelSecretariaClient({
                             </button>
                           )}
 
-                          {/* Transição 3: Entregar se em_preparo */}
                           {ped.status === "em_preparo" && (
                             <button
                               type="button"
@@ -417,23 +473,22 @@ export function PainelSecretariaClient({
                             </button>
                           )}
 
-                          {/* Cancelar (antes de entregue) */}
-                          {ped.status !== "entregue" && ped.status !== "cancelado" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPedidoCancelando(ped);
-                                setMotivoCancelamento("");
-                                setErroAcao(null);
-                              }}
-                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition cursor-pointer"
-                              title="Cancelar Pedido"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          )}
+                          {ped.status !== "entregue" &&
+                            ped.status !== "cancelado" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPedidoCancelando(ped);
+                                  setMotivoCancelamento("");
+                                  setErroAcao(null);
+                                }}
+                                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition cursor-pointer"
+                                title="Cancelar Pedido"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            )}
 
-                          {/* Detalhes */}
                           <button
                             type="button"
                             onClick={() => setPedidoDetalhe(ped)}
@@ -464,9 +519,12 @@ export function PainelSecretariaClient({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Iniciar Preparo — Pedido #{pedidoPreparo.id.toString().padStart(4, "0")}
+                    Iniciar Preparo — Pedido #
+                    {pedidoPreparo.id.toString().padStart(4, "0")}
                   </h3>
-                  <p className="text-xs text-slate-500">{pedidoPreparo.nomeEscola}</p>
+                  <p className="text-xs text-slate-500">
+                    {pedidoPreparo.nomeEscola}
+                  </p>
                 </div>
               </div>
               <button
@@ -486,7 +544,8 @@ export function PainelSecretariaClient({
             <div className="mt-4 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Data Prevista de Entrega <span className="text-red-500">*</span>
+                  Data Prevista de Entrega{" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
@@ -572,7 +631,8 @@ export function PainelSecretariaClient({
                     Conferir e Confirmar Entrega
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Os itens entrarão imediatamente no estoque da unidade escolar
+                    Os itens entrarão imediatamente no estoque da unidade
+                    escolar
                   </p>
                 </div>
               </div>
@@ -611,7 +671,9 @@ export function PainelSecretariaClient({
                     </div>
 
                     <div className="shrink-0 flex items-center gap-2">
-                      <label className="text-xs font-medium text-slate-600">Validade:</label>
+                      <label className="text-xs font-medium text-slate-600">
+                        Validade:
+                      </label>
                       <input
                         type="date"
                         value={validadesPorItem[it.idProduto] || ""}
@@ -664,7 +726,8 @@ export function PainelSecretariaClient({
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Cancelar Pedido #{pedidoCancelando.id.toString().padStart(4, "0")}
+                  Cancelar Pedido #
+                  {pedidoCancelando.id.toString().padStart(4, "0")}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {pedidoCancelando.nomeEscola}
@@ -680,7 +743,8 @@ export function PainelSecretariaClient({
 
             <div className="mt-4">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                Motivo do cancelamento institucional <span className="text-red-500">*</span>
+                Motivo do cancelamento institucional{" "}
+                <span className="text-red-500">*</span>
               </label>
               <textarea
                 rows={3}
@@ -727,8 +791,12 @@ export function PainelSecretariaClient({
                   <Upload className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Importar Produtos (.xlsx)</h3>
-                  <p className="text-xs text-slate-500">Adicione ou atualize produtos via Excel</p>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Importar Produtos (.xlsx)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Adicione produtos ao catálogo local via Excel
+                  </p>
                 </div>
               </div>
               <button
@@ -750,7 +818,8 @@ export function PainelSecretariaClient({
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
-                    {resultadoImportacao.importados} produto(s) cadastrados com sucesso!
+                    {resultadoImportacao.importados} produto(s) cadastrados com
+                    sucesso!
                   </span>
                 </div>
               )}
@@ -758,16 +827,21 @@ export function PainelSecretariaClient({
               <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-slate-400 transition bg-slate-50">
                 <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                 <p className="text-xs text-slate-800 font-bold mb-1">
-                  {arquivoUpload ? arquivoUpload.name : "Clique para selecionar o arquivo .xlsx"}
+                  {arquivoUpload
+                    ? arquivoUpload.name
+                    : "Clique para selecionar o arquivo .xlsx"}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Colunas esperadas: Nome, Categoria, Unidade, Preço, Estoque Mínimo, Descrição
+                  Colunas esperadas: Nome, Categoria, Unidade, Preço, Estoque
+                  Mínimo, Descrição
                 </p>
                 <input
                   type="file"
                   ref={fileInputRef}
                   accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  onChange={(e) => setArquivoUpload(e.target.files?.[0] || null)}
+                  onChange={(e) =>
+                    setArquivoUpload(e.target.files?.[0] || null)
+                  }
                   className="hidden"
                 />
                 <button
@@ -811,7 +885,9 @@ export function PainelSecretariaClient({
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span>Pedido #{pedidoDetalhe.id.toString().padStart(4, "0")}</span>
+                  <span>
+                    Pedido #{pedidoDetalhe.id.toString().padStart(4, "0")}
+                  </span>
                   <span
                     className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
                       statusConfig[pedidoDetalhe.status].color
@@ -821,7 +897,11 @@ export function PainelSecretariaClient({
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Unidade: <strong className="text-slate-900">{pedidoDetalhe.nomeEscola}</strong> — Solicitado por: {pedidoDetalhe.nomeSolicitante}
+                  Unidade:{" "}
+                  <strong className="text-slate-900">
+                    {pedidoDetalhe.nomeEscola}
+                  </strong>{" "}
+                  — Solicitado por: {pedidoDetalhe.nomeSolicitante}
                 </p>
               </div>
               <button
@@ -861,7 +941,10 @@ export function PainelSecretariaClient({
                           R$ {Number(it.precoUnitario).toFixed(2)}
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                          R$ {(Number(it.precoUnitario) * it.quantidade).toFixed(2)}
+                          R${" "}
+                          {(Number(it.precoUnitario) * it.quantidade).toFixed(
+                            2
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -881,14 +964,18 @@ export function PainelSecretariaClient({
 
               {pedidoDetalhe.observacao && (
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
-                  <strong className="text-slate-900 block mb-1">Observações da Escola:</strong>
+                  <strong className="text-slate-900 block mb-1">
+                    Observações da Escola:
+                  </strong>
                   {pedidoDetalhe.observacao}
                 </div>
               )}
 
               {pedidoDetalhe.motivoCancelamento && (
                 <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
-                  <strong className="text-red-700 block mb-1">Motivo do Cancelamento:</strong>
+                  <strong className="text-red-700 block mb-1">
+                    Motivo do Cancelamento:
+                  </strong>
                   {pedidoDetalhe.motivoCancelamento}
                 </div>
               )}
@@ -903,13 +990,17 @@ export function PainelSecretariaClient({
                     <div key={i} className="relative">
                       <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-4 ring-white" />
                       <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <span className="capitalize">{h.status.replace("_", " ")}</span>
+                        <span className="capitalize">
+                          {h.status.replace("_", " ")}
+                        </span>
                         <span className="text-[10px] text-slate-500 font-normal">
                           {new Date(h.data).toLocaleString("pt-BR")}
                         </span>
                       </div>
                       {h.observacao && (
-                        <p className="text-[11px] text-slate-600 mt-0.5">{h.observacao}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          {h.observacao}
+                        </p>
                       )}
                     </div>
                   ))}

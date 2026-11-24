@@ -1,42 +1,56 @@
-import { requireRole } from "@/lib/auth";
-import { db } from "@/db/client";
-import { produtos, estoqueLotes, escolas } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { EstoqueEscolaClient } from "./estoque-escola-client";
+"use client";
+
+import { useMemo } from "react";
 import { Boxes } from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import { EstoqueEscolaClient } from "./estoque-escola-client";
 
-export default async function EstoqueEscolaPage() {
-  const session = await requireRole(["escola", "administrador"]);
-  const idEscola = session.idEscola || 1;
+export default function EstoqueEscolaPage() {
+  const { db, session } = useAppStore();
+  const idEscola = session?.idEscola || 1;
 
-  // Buscar produtos e lotes da escola
-  const lotesRaw = await db
-    .select({
-      idLote: estoqueLotes.id,
-      idProduto: produtos.id,
-      nomeProduto: produtos.nome,
-      categoria: produtos.categoria,
-      unidade: produtos.unidade,
-      estoqueMinimo: produtos.estoqueMinimo,
-      validade: estoqueLotes.validade,
-      quantidadeAtual: estoqueLotes.quantidadeAtual,
-    })
-    .from(estoqueLotes)
-    .innerJoin(produtos, eq(estoqueLotes.idProduto, produtos.id))
-    .where(eq(estoqueLotes.idEscola, idEscola))
-    .orderBy(produtos.categoria, produtos.nome, estoqueLotes.validade);
+  const lotesRaw = useMemo(() => {
+    return db.estoqueLotes
+      .filter((l) => l.idEscola === idEscola)
+      .map((l) => {
+        const prod = db.produtos.find((p) => p.id === l.idProduto);
+        return {
+          idLote: l.id,
+          idProduto: l.idProduto,
+          nomeProduto: prod?.nome || `Produto #${l.idProduto}`,
+          categoria: prod?.categoria || "outros",
+          unidade: prod?.unidade || "un",
+          estoqueMinimo: prod?.estoqueMinimo ?? 10,
+          validade: l.validade,
+          quantidadeAtual: l.quantidadeAtual,
+        };
+      })
+      .sort((a, b) => {
+        const cat = a.categoria.localeCompare(b.categoria);
+        if (cat !== 0) return cat;
+        const nome = a.nomeProduto.localeCompare(b.nomeProduto);
+        if (nome !== 0) return nome;
+        return (a.validade || "9999-99-99").localeCompare(
+          b.validade || "9999-99-99"
+        );
+      });
+  }, [db.estoqueLotes, db.produtos, idEscola]);
 
-  // Também consultar produtos cadastrados para mostrar saldo mesmo que não tenha lote
-  const todosProdutos = await db
-    .select({
-      id: produtos.id,
-      nome: produtos.nome,
-      categoria: produtos.categoria,
-      unidade: produtos.unidade,
-      estoqueMinimo: produtos.estoqueMinimo,
-    })
-    .from(produtos)
-    .orderBy(produtos.categoria, produtos.nome);
+  const todosProdutos = useMemo(() => {
+    return [...db.produtos]
+      .sort((a, b) => {
+        const cat = a.categoria.localeCompare(b.categoria);
+        if (cat !== 0) return cat;
+        return a.nome.localeCompare(b.nome);
+      })
+      .map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        categoria: p.categoria,
+        unidade: p.unidade,
+        estoqueMinimo: p.estoqueMinimo,
+      }));
+  }, [db.produtos]);
 
   return (
     <div className="space-y-6">
@@ -47,8 +61,11 @@ export default async function EstoqueEscolaPage() {
             <span>Estoque Físico da Unidade</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            {session.nomeEscola ? (
-              <span>Unidade: <strong className="text-slate-900">{session.nomeEscola}</strong></span>
+            {session?.nomeEscola ? (
+              <span>
+                Unidade:{" "}
+                <strong className="text-slate-900">{session.nomeEscola}</strong>
+              </span>
             ) : (
               "Controle de saldos por lote e validade"
             )}

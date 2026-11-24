@@ -1,31 +1,52 @@
-import { requireRole } from "@/lib/auth";
-import { db } from "@/db/client";
-import { escolas, perfisUsuarios, produtos, fornecedores } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { AdminPanelClient } from "./admin-panel-client";
+"use client";
+
+import { useMemo } from "react";
 import { ShieldCheck } from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import { AdminPanelClient } from "./admin-panel-client";
 
-export default async function AdminPage() {
-  await requireRole(["administrador"]);
+export default function AdminPage() {
+  const { db } = useAppStore();
 
-  const [escolasLista, usuariosLista, produtosLista, fornecedoresLista] =
-    await Promise.all([
-      db.select().from(escolas).orderBy(escolas.nome),
-      db
-        .select({
-          idAuth: perfisUsuarios.idAuth,
-          nome: perfisUsuarios.nome,
-          email: perfisUsuarios.email,
-          papel: perfisUsuarios.papel,
-          idEscola: perfisUsuarios.idEscola,
-          nomeEscola: escolas.nome,
+  const escolasLista = useMemo(
+    () => [...db.escolas].sort((a, b) => a.nome.localeCompare(b.nome)),
+    [db.escolas]
+  );
+
+  const usuariosLista = useMemo(
+    () =>
+      [...db.perfisUsuarios]
+        .map((u) => {
+          const esc = u.idEscola
+            ? db.escolas.find((e) => e.id === u.idEscola)
+            : undefined;
+          return {
+            idAuth: u.idAuth,
+            nome: u.nome,
+            email: u.email,
+            papel: u.papel,
+            idEscola: u.idEscola,
+            nomeEscola: esc?.nome ?? null,
+          };
         })
-        .from(perfisUsuarios)
-        .leftJoin(escolas, eq(perfisUsuarios.idEscola, escolas.id))
-        .orderBy(perfisUsuarios.nome),
-      db.select().from(produtos).orderBy(produtos.categoria, produtos.nome),
-      db.select().from(fornecedores).orderBy(fornecedores.nome),
-    ]);
+        .sort((a, b) => a.nome.localeCompare(b.nome)),
+    [db.perfisUsuarios, db.escolas]
+  );
+
+  const produtosLista = useMemo(
+    () =>
+      [...db.produtos].sort((a, b) => {
+        const cat = a.categoria.localeCompare(b.categoria);
+        if (cat !== 0) return cat;
+        return a.nome.localeCompare(b.nome);
+      }),
+    [db.produtos]
+  );
+
+  const fornecedoresLista = useMemo(
+    () => [...db.fornecedores].sort((a, b) => a.nome.localeCompare(b.nome)),
+    [db.fornecedores]
+  );
 
   return (
     <div className="space-y-6">
@@ -36,7 +57,8 @@ export default async function AdminPage() {
             <span>Painel de Administração do Sistema</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Gestão cadastral de unidades escolares, operadores, catálogo de produtos e fornecedores
+            Gestão cadastral de unidades escolares, operadores, catálogo de
+            produtos e fornecedores
           </p>
         </div>
       </div>

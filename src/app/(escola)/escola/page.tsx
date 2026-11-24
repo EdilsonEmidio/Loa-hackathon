@@ -1,54 +1,46 @@
-import { requireRole } from "@/lib/auth";
-import { db } from "@/db/client";
-import { pedidos, pedidoItens, produtos, pedidoHistoricoStatus } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+"use client";
+
+import { useMemo } from "react";
 import Link from "next/link";
-import { ListaPedidosEscolaClient } from "./pedidos-escola-client";
 import { Plus, Package } from "lucide-react";
+import { useAppStore } from "@/context/app-store";
+import { ListaPedidosEscolaClient } from "./pedidos-escola-client";
 
-export default async function EscolaDashboardPage() {
-  const session = await requireRole(["escola", "administrador"]);
-  const idEscola = session.idEscola || 1;
+export default function EscolaDashboardPage() {
+  const { db, session } = useAppStore();
+  const idEscola = session?.idEscola || 1;
 
-  // Buscar pedidos da escola
-  const pedidosRaw = await db
-    .select({
-      id: pedidos.id,
-      status: pedidos.status,
-      dataSolicitacao: pedidos.dataSolicitacao,
-      dataPrevistaEntrega: pedidos.dataPrevistaEntrega,
-      dataEntrega: pedidos.dataEntrega,
-      observacao: pedidos.observacao,
-      motivoCancelamento: pedidos.motivoCancelamento,
-    })
-    .from(pedidos)
-    .where(eq(pedidos.idEscola, idEscola))
-    .orderBy(desc(pedidos.dataSolicitacao));
+  const pedidosComItens = useMemo(() => {
+    const pedidosRaw = db.pedidos
+      .filter((p) => p.idEscola === idEscola)
+      .sort(
+        (a, b) =>
+          new Date(b.dataSolicitacao).getTime() -
+          new Date(a.dataSolicitacao).getTime()
+      );
 
-  // Buscar itens para cada pedido
-  const pedidosComItens = await Promise.all(
-    pedidosRaw.map(async (ped) => {
-      const itens = await db
-        .select({
-          idProduto: pedidoItens.idProduto,
-          nomeProduto: produtos.nome,
-          quantidade: pedidoItens.quantidade,
-          precoUnitario: pedidoItens.precoUnitario,
-          unidade: produtos.unidade,
-        })
-        .from(pedidoItens)
-        .innerJoin(produtos, eq(pedidoItens.idProduto, produtos.id))
-        .where(eq(pedidoItens.idPedido, ped.id));
+    return pedidosRaw.map((ped) => {
+      const itens = db.pedidoItens
+        .filter((it) => it.idPedido === ped.id)
+        .map((it) => {
+          const prod = db.produtos.find((p) => p.id === it.idProduto);
+          return {
+            idProduto: it.idProduto,
+            nomeProduto: prod?.nome || `Produto #${it.idProduto}`,
+            quantidade: it.quantidade,
+            precoUnitario: it.precoUnitario,
+            unidade: prod?.unidade || "un",
+          };
+        });
 
-      const historico = await db
-        .select({
-          status: pedidoHistoricoStatus.status,
-          observacao: pedidoHistoricoStatus.observacao,
-          data: pedidoHistoricoStatus.data,
-        })
-        .from(pedidoHistoricoStatus)
-        .where(eq(pedidoHistoricoStatus.idPedido, ped.id))
-        .orderBy(desc(pedidoHistoricoStatus.data));
+      const historico = db.pedidoHistoricoStatus
+        .filter((h) => h.idPedido === ped.id)
+        .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+        .map((h) => ({
+          status: h.status,
+          observacao: h.observacao,
+          data: h.data,
+        }));
 
       const valorTotal = itens.reduce(
         (acc, item) => acc + Number(item.precoUnitario) * item.quantidade,
@@ -56,13 +48,19 @@ export default async function EscolaDashboardPage() {
       );
 
       return {
-        ...ped,
+        id: ped.id,
+        status: ped.status,
+        dataSolicitacao: ped.dataSolicitacao,
+        dataPrevistaEntrega: ped.dataPrevistaEntrega,
+        dataEntrega: ped.dataEntrega,
+        observacao: ped.observacao,
+        motivoCancelamento: ped.motivoCancelamento,
         itens,
         historico,
         valorTotal,
       };
-    })
-  );
+    });
+  }, [db, idEscola]);
 
   return (
     <div className="space-y-6">
@@ -74,8 +72,11 @@ export default async function EscolaDashboardPage() {
             <span>Pedidos de Suprimentos da Escola</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            {session.nomeEscola ? (
-              <span>Unidade: <strong className="text-slate-900">{session.nomeEscola}</strong></span>
+            {session?.nomeEscola ? (
+              <span>
+                Unidade:{" "}
+                <strong className="text-slate-900">{session.nomeEscola}</strong>
+              </span>
             ) : (
               "Acompanhe o andamento dos pedidos de materiais e alimentos"
             )}

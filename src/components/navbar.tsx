@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { logoutAction } from "@/actions/auth-actions";
+import { useAppStore } from "@/context/app-store";
 import {
   GraduationCap,
-  School,
   FileSpreadsheet,
   ShieldCheck,
   Bell,
@@ -16,24 +15,21 @@ import {
   AlertTriangle,
   X,
   ExternalLink,
+  RotateCcw,
 } from "lucide-react";
-import type { UserSession } from "@/lib/session";
-import type { AlertaItem } from "@/lib/alertas";
+import type { AlertaItem, UserSession } from "@/lib/types";
 
 interface NavbarProps {
   session: UserSession;
   alertas: AlertaItem[];
-  escolasLista?: { id: number; nome: string }[];
-  idEscolaSelecionada?: number;
 }
 
-export function Navbar({
-  session,
-  alertas,
-  escolasLista = [],
-  idEscolaSelecionada,
-}: NavbarProps) {
+export function Navbar({ session, alertas }: NavbarProps) {
   const pathname = usePathname();
+  const normalizedPath = pathname.replace(/\/$/, "") || "/";
+  const router = useRouter();
+  const { logout, resetDemoData } = useAppStore();
+
   const [dropdownAlertasAberto, setDropdownAlertasAberto] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -43,10 +39,12 @@ export function Navbar({
 
   const totalAlertas = alertas.length;
 
-  // Fechar dropdown ao clicar fora
   useEffect(() => {
     function handleClickFora(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setDropdownAlertasAberto(false);
       }
     }
@@ -57,6 +55,21 @@ export function Navbar({
       document.removeEventListener("mousedown", handleClickFora);
     };
   }, [dropdownAlertasAberto]);
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
+
+  const handleResetDemo = () => {
+    if (
+      window.confirm(
+        "Restaurar todos os pedidos, estoques e cadastros para o estado inicial de demonstração?"
+      )
+    ) {
+      resetDemoData();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 text-slate-800 shadow-sm">
@@ -77,7 +90,7 @@ export function Navbar({
             </div>
           </Link>
 
-          {/* Navegação Principal com Itens Maiores */}
+          {/* Navegação Principal */}
           <nav className="hidden lg:flex items-center gap-2">
             {/* Links da Escola */}
             {(isEscola || isAdmin) && (
@@ -85,7 +98,8 @@ export function Navbar({
                 <Link
                   href="/escola"
                   className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    pathname === "/escola" || pathname.startsWith("/escola/pedidos")
+                    normalizedPath === "/escola" ||
+                    normalizedPath.startsWith("/escola/pedidos")
                       ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -97,7 +111,7 @@ export function Navbar({
                 <Link
                   href="/escola/estoque"
                   className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    pathname === "/escola/estoque"
+                    normalizedPath === "/escola/estoque"
                       ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -117,7 +131,7 @@ export function Navbar({
                 <Link
                   href="/secretaria"
                   className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    pathname === "/secretaria"
+                    normalizedPath === "/secretaria"
                       ? "bg-emerald-600 text-white shadow-sm shadow-emerald-500/25"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -129,7 +143,7 @@ export function Navbar({
                 <Link
                   href="/secretaria/estoque"
                   className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    pathname === "/secretaria/estoque"
+                    normalizedPath === "/secretaria/estoque"
                       ? "bg-emerald-600 text-white shadow-sm shadow-emerald-500/25"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -147,7 +161,7 @@ export function Navbar({
                 <Link
                   href="/admin"
                   className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    pathname.startsWith("/admin")
+                    normalizedPath.startsWith("/admin")
                       ? "bg-purple-600 text-white shadow-sm shadow-purple-500/25"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   }`}
@@ -159,9 +173,9 @@ export function Navbar({
             )}
           </nav>
 
-          {/* Lado Direito: Sininho e Perfil */}
-          <div className="flex items-center gap-3.5">
-            {/* Botão de Alertas com Dropdown Exatamente Embaixo do Sininho */}
+          {/* Lado Direito: Sininho, Reset Demo, Perfil e Sair */}
+          <div className="flex items-center gap-2.5">
+            {/* Botão de Alertas */}
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
@@ -174,7 +188,7 @@ export function Navbar({
                 title="Avisos de Estoque e Validade"
                 aria-expanded={dropdownAlertasAberto}
               >
-                <Bell className="w-6 h-6" />
+                <Bell className="w-5 h-5 sm:w-6 sm:h-6" />
                 {totalAlertas > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white shadow-md animate-pulse">
                     {totalAlertas}
@@ -182,10 +196,8 @@ export function Navbar({
                 )}
               </button>
 
-              {/* Dropdown posicionado abaixo do sininho */}
               {dropdownAlertasAberto && (
-                <div className="absolute right-0 top-full mt-2.5 w-[360px] sm:w-[440px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                  {/* Cabeçalho do Dropdown */}
+                <div className="absolute right-0 top-full mt-2.5 w-[340px] sm:w-[440px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
@@ -203,6 +215,7 @@ export function Navbar({
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => setDropdownAlertasAberto(false)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition cursor-pointer"
                     >
@@ -210,7 +223,6 @@ export function Navbar({
                     </button>
                   </div>
 
-                  {/* Lista de Alertas com Scroll Interno */}
                   <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100 p-2">
                     {totalAlertas === 0 ? (
                       <div className="py-8 text-center text-slate-500 text-xs">
@@ -242,7 +254,9 @@ export function Navbar({
                             <p className="text-xs font-bold text-slate-900">
                               {alerta.nomeProduto}
                             </p>
-                            <p className="text-[11px] text-slate-500">{alerta.detalhe}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {alerta.detalhe}
+                            </p>
                           </div>
 
                           {(isEscola || isAdmin) && (
@@ -260,9 +274,10 @@ export function Navbar({
                     )}
                   </div>
 
-                  {/* Rodapé do Dropdown */}
                   <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs">
-                    <span className="text-slate-400 text-[11px]">Atualizado em tempo real</span>
+                    <span className="text-slate-400 text-[11px]">
+                      Atualizado em tempo real
+                    </span>
                     <button
                       type="button"
                       onClick={() => setDropdownAlertasAberto(false)}
@@ -275,6 +290,16 @@ export function Navbar({
               )}
             </div>
 
+            {/* Resetar Dados Demo */}
+            <button
+              type="button"
+              onClick={handleResetDemo}
+              className="p-2.5 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 transition-all cursor-pointer"
+              title="Restaurar dados iniciais de demonstração"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
+
             {/* Info do Usuário */}
             <div className="hidden sm:flex flex-col text-right border-l border-slate-200 pl-3.5">
               <span className="text-sm font-bold text-slate-900 leading-tight">
@@ -282,7 +307,9 @@ export function Navbar({
               </span>
               <span className="text-xs text-slate-500 font-medium">
                 {isEscola && session.nomeEscola ? (
-                  <span className="text-emerald-600 font-semibold">{session.nomeEscola}</span>
+                  <span className="text-emerald-600 font-semibold">
+                    {session.nomeEscola}
+                  </span>
                 ) : (
                   <span className="capitalize">{session.papel}</span>
                 )}
@@ -290,15 +317,14 @@ export function Navbar({
             </div>
 
             {/* Logout */}
-            <form action={logoutAction}>
-              <button
-                type="submit"
-                className="p-2.5 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition-all cursor-pointer"
-                title="Encerrar sessão"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </form>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="p-2.5 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition-all cursor-pointer"
+              title="Encerrar sessão"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </div>
